@@ -1,0 +1,13 @@
+{
+  "name": "witch-poison-game",
+  "version": "1.0.0",
+  "description": "🧙‍♀️ 女巫的毒药 - 联机双人心理博弈游戏",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.4"
+  }
+}
