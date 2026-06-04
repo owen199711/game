@@ -19,7 +19,7 @@ app.get('/', (req, res) => {
 
 // ===== 游戏房间管理 =====
 const rooms = {};
-const ROOM_CLEANUP_MS = 5 * 60 * 1000; // 5 分钟
+const ROOM_CLEANUP_MS = 5 * 60 * 1000;
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -36,33 +36,16 @@ function cleanupRoom(code) {
   }
 }
 
-/** 获取客户端真实 IP（考虑代理） */
-function getClientIP(socket) {
-  const forwarded = socket.handshake.headers['x-forwarded-for'];
-  if (forwarded) return forwarded.split(',')[0].trim();
-  return socket.handshake.address;
-}
-
 io.on('connection', (socket) => {
-  const clientIP = getClientIP(socket);
-  console.log(`[连接] ${socket.id} IP=${clientIP}`);
+  console.log(`[连接] ${socket.id}`);
 
   // ===== 创建房间 =====
   socket.on('create_room', () => {
-    // 先检查这个 IP 是否已在某个房间中
-    for (const code in rooms) {
-      const r = rooms[code];
-      const idx = r.playerIPs.indexOf(clientIP);
-      if (idx >= 0 && !r.disconnected[idx]) {
-        return socket.emit('error_msg', '你已经在房间 ' + code + ' 中了');
-      }
-    }
-
     let code;
     do { code = generateRoomCode(); } while (rooms[code]);
     rooms[code] = {
-      players: [socket.id, null],
-      playerIPs: [clientIP, null],
+      players: [null, null],           // socket id
+      used: [false, false],             // slot 是否被占用
       disconnected: [false, false],
       scores: [{ win: 0, lose: 0 }, { win: 0, lose: 0 }],
       state: 'waiting',
@@ -75,55 +58,73 @@ io.on('connection', (socket) => {
       round: 0,
       cleanupTimer: null,
     };
+    // 房主自动占位 slot 1
+    rooms[code].players[0] = socket.id;
+    rooms[code].used[0] = true;
     socket.join(code);
     socket.currentRoom = code;
     socket.emit('room_created', { code, playerIndex: 1 });
-    console.log(`[创建房间] ${code} 玩家1 IP=${clientIP}`);
+    console.log(`[创建房间] ${code} 房主 ${socket.id}`);
   });
 
-  // ===== 加入房间 =====
-  socket.on('join_room', (code) => {
+  // ===== 加入房间（客户端指定选 1 还是 2） =====
+  socket.on('join_room', ({ code, playerIndex }) => {
     code = code.toUpperCase();
     const room = rooms[code];
     if (!room) return socket.emit('error_msg', '房间不存在');
-    if (room.players.length < 2) return socket.emit('error_msg', '房间异常');
 
-    // 检查第二个位置是否已被占用
-    if (room.players[1] && !room.disconnected[1]) {
-      return socket.emit('error_msg', '房间已满');
+    const idx = playerIndex - 1; // 0 or 1
+    if (idx !== 0 && idx !== 1) return socket.emit('error_msg', '无效的玩家位置');
+
+    // 如果该位置已被占用且未断开
+    if (room.used[idx] && !room.disconnected[idx]) {
+      return socket.emit('error_msg', `玩家${playerIndex} 位置已被占用`);
     }
 
-    // 检查这个 IP 是否已经在对局中
-    if (room.playerIPs[0] === clientIP) {
-      // 房主自己不能加入自己的房间
-      return socket.emit('error_msg', '你是房主，不能以玩家2身份加入');
+    // 如果玩家选了另一个位置，也要检查
+    const otherIdx = idx === 0 ? 1 : 0;
+    if (room.used[otherIdx] && !room.disconnected[otherIdx]) {
+      // 另一个位置有人，说明这个房间已有真实玩家
     }
 
-    room.players[1] = socket.id;
-    room.playerIPs[1] = clientIP;
-    room.disconnected[1] = false;
+    // 如果另一个位置被同一个人占了（同一个 socket），拒绝
+    if (room.players[otherIdx] === socket.id) {
+      return socket.emit('error_msg', '你已经在房间中了');
+    }
 
+    room.players[idx] = socket.id;
+    room.used[idx] = true;
+    room.disconnected[idx] = false;
     socket.join(code);
     socket.currentRoom = code;
 
-    socket.emit('room_joined', { code, playerIndex: 2, scores: room.scores });
-    io.to(room.players[0]).emit('player_joined', { scores: room.scores });
-    console.log(`[加入房间] ${code} 玩家2 IP=${clientIP}`);
+    socket.emit('room_joined', { code, playerIndex, scores: room.scores });
+
+    // 通知另一个玩家
+    const otherPlayerId = room.players[otherIdx];
+    if (otherPlayerId) {
+      io.to(otherPlayerId).emit('player_joined', { scores: room.scores });
+    }
+    console.log(`[加入房间] ${code} 玩家${playerIndex} ${socket.id}`);
   });
 
-  // ===== IP 自动重连 =====
-  socket.on('rejoin_room', (code) => {
+  // ===== 重连（客户端传 playerIndex） =====
+  socket.on('rejoin_room', ({ code, playerIndex }) => {
     code = code.toUpperCase();
     const room = rooms[code];
     if (!room) return socket.emit('rejoin_failed', '房间已过期');
 
-    // 查找这个 IP 在房间中的位置
-    const idx = room.playerIPs.indexOf(clientIP);
-    if (idx === -1) return socket.emit('rejoin_failed', 'IP 不匹配，你不是这个房间的玩家');
-    if (!room.disconnected[idx]) return socket.emit('rejoin_failed', '当前玩家未断开');
+    const idx = playerIndex - 1;
+    if (idx !== 0 && idx !== 1) return socket.emit('rejoin_failed', '无效的玩家位置');
+
+    // 检查这个 slot 是否确实是断开的
+    if (!room.disconnected[idx]) {
+      return socket.emit('rejoin_failed', '该玩家未断开');
+    }
 
     // 执行重连
     room.players[idx] = socket.id;
+    room.used[idx] = true;
     room.disconnected[idx] = false;
     socket.join(code);
     socket.currentRoom = code;
@@ -140,7 +141,6 @@ io.on('connection', (socket) => {
       io.to(room.players[opponentIdx]).emit('opponent_reconnected');
     }
 
-    const playerIndex = idx + 1;
     socket.emit('rejoin_success', {
       state: room.state,
       playerIndex,
@@ -154,21 +154,53 @@ io.on('connection', (socket) => {
       round: room.round,
     });
 
-    console.log(`[重连] ${code} 玩家${playerIndex} IP=${clientIP}`);
+    console.log(`[重连] ${code} 玩家${playerIndex} ${socket.id}`);
   });
 
-  // ===== 检查房间状态 =====
+  // ===== 离开房间 =====
+  socket.on('leave_room', () => {
+    const code = socket.currentRoom;
+    const room = rooms[code];
+    if (!room) return;
+
+    const idx = room.players.indexOf(socket.id);
+    if (idx === -1) return;
+
+    console.log(`[离开] ${code} 玩家${idx + 1} ${socket.id}`);
+
+    // 清理这个玩家的 slot
+    room.players[idx] = null;
+    room.used[idx] = false;
+    room.disconnected[idx] = false;
+    socket.leave(code);
+    delete socket.currentRoom;
+
+    // 通知对手
+    const opponentIdx = idx === 0 ? 1 : 0;
+    const opponentId = room.players[opponentIdx];
+    if (opponentId) {
+      io.to(opponentId).emit('opponent_left');
+    }
+
+    // 两个 slot 都空了，清理房间
+    if (!room.used[0] && !room.used[1]) {
+      cleanupRoom(code);
+    } else if (room.state !== 'waiting') {
+      // 游戏中有人离开，等 5 分钟清理
+      if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
+      room.cleanupTimer = setTimeout(() => cleanupRoom(code), ROOM_CLEANUP_MS);
+    }
+  });
+
+  // ===== 获取房间状态 =====
   socket.on('get_room_state', (code) => {
     code = code.toUpperCase();
     const room = rooms[code];
     if (!room) return socket.emit('room_state', null);
-    const idx = room.playerIPs.indexOf(clientIP);
     socket.emit('room_state', {
       exists: true,
-      playerCount: room.players.filter(p => p).length,
+      used: room.used,
       state: room.state,
-      playerIndex: idx >= 0 ? idx + 1 : 0,
-      isMyTurn: idx >= 0 && room.state === 'playing' && room.currentPlayer === idx + 1,
     });
   });
 
@@ -177,7 +209,11 @@ io.on('connection', (socket) => {
     const room = getRoom(socket);
     const c = socket.currentRoom;
     if (!room || !c) return;
+
+    // 只有玩家 1（房主）能开始
     if (room.players[0] !== socket.id) return;
+    // 两个玩家都必须在线
+    if (!room.players[1]) return socket.emit('error_msg', '等待对手加入');
 
     const FOODS = [
       '🍎','🍊','🍋','🍇','🍓','🍑','🍒','🍌','🍉','🍈',
@@ -245,16 +281,13 @@ io.on('connection', (socket) => {
     const isPoisoned = (idx === opponentPoison);
 
     if (isPoisoned) {
-      room.winner = room.currentPlayer === 1 ? 2 : 1;
       const loser = room.currentPlayer;
-      const winner = room.winner;
-      // 更新积分
+      const winner = room.winner = loser === 1 ? 2 : 1;
       room.scores[winner - 1].win++;
       room.scores[loser - 1].lose++;
       room.state = 'gameover';
       io.to(c).emit('game_over', {
-        winner,
-        loser,
+        winner, loser,
         eatenIdx: idx,
         poisonP1: room.poisonP1,
         poisonP2: room.poisonP2,
@@ -265,7 +298,6 @@ io.on('connection', (socket) => {
     } else if (room.eaten.length >= 25) {
       room.state = 'gameover';
       room.winner = 0;
-      // 平局双方都记负
       room.scores[0].lose++;
       room.scores[1].lose++;
       io.to(c).emit('game_over', {
@@ -301,7 +333,6 @@ io.on('connection', (socket) => {
     room.winner = 0;
     room.currentPlayer = 0;
 
-    // 重新打乱食材
     const FOODS = [
       '🍎','🍊','🍋','🍇','🍓','🍑','🍒','🍌','🍉','🍈',
       '🥝','🍍','🥭','🍬','🍫','🧁','🍩','🍪','🌰','🥜',
@@ -339,9 +370,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // 标记断开（保留 IP 和 player slot）
+    // 标记断开（保留 used 占位，允许重连）
     room.disconnected[playerIdx] = true;
-    console.log(`[断开] ${code} 玩家${playerIdx + 1} IP=${room.playerIPs[playerIdx]}`);
+    console.log(`[断开] ${code} 玩家${playerIdx + 1} ${socket.id}`);
 
     // 通知对手
     const opponentIdx = playerIdx === 0 ? 1 : 0;
@@ -349,16 +380,16 @@ io.on('connection', (socket) => {
       io.to(room.players[opponentIdx]).emit('opponent_disconnected');
     }
 
-    // 所有玩家都断开 → 立即清理
+    // 两个都断开 → 立即清理
     if (room.disconnected.every(d => d)) {
       cleanupRoom(code);
       return;
     }
 
-    // 部分断开 → 5 分钟后清理（给足重连时间）
+    // 部分断开 → 5 分钟后清理
     if (room.cleanupTimer) clearTimeout(room.cleanupTimer);
     room.cleanupTimer = setTimeout(() => cleanupRoom(code), ROOM_CLEANUP_MS);
-    console.log(`[房间] ${code} 将在 ${ROOM_CLEANUP_MS / 1000} 秒后清理`);
+    console.log(`[房间] ${code} 5分钟后清理`);
   });
 
   function getRoom(socket) {

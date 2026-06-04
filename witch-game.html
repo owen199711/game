@@ -136,6 +136,15 @@
         <button class="btn" id="joinBtn">🔑 加入</button>
       </div>
     </div>
+    <!-- 身份选择（输入房间号后弹出） -->
+    <div id="rolePicker" style="display:none; flex-direction:column; align-items:center; gap:12px; width:100%;">
+      <div style="font-size:15px; color:#a88aff;">选择你的身份</div>
+      <div style="display:flex; gap:12px;">
+        <button class="btn role-btn" data-role="1" style="font-size:16px; padding:12px 24px;">🧙‍♀️ 玩家1</button>
+        <button class="btn role-btn" data-role="2" style="font-size:16px; padding:12px 24px;">🧙‍♂️ 玩家2</button>
+      </div>
+      <button class="btn" id="backToLobbyBtn" style="font-size:12px;">← 返回</button>
+    </div>
     <div class="error-msg" id="errorMsg"></div>
     <div id="connStatus" style="font-size:12px; color:#665588; text-align:center;"></div>
     <div class="footer-text">两台设备打开同一页面，一人创建一人加入</div>
@@ -184,6 +193,9 @@
   const reconnectingMsg = document.getElementById('reconnectingMsg');
   const scoreDisplay = document.getElementById('scoreDisplay');
   const roundDisplay = document.getElementById('roundDisplay');
+  const rolePicker = document.getElementById('rolePicker');
+  const roleBtns = document.querySelectorAll('.role-btn');
+  const backToLobbyBtn = document.getElementById('backToLobbyBtn');
 
   // 连接状态
   socket.on('connect', () => {
@@ -200,51 +212,57 @@
     connStatus.style.color = '#ffaa44';
   });
 
-  // ===== localStorage 只存房间号 =====
-  function saveRoomCode(code) {
-    try { localStorage.setItem('witch_room_code', code); } catch(e) {}
+  // ===== localStorage 存房间号和身份 =====
+  function saveRoomInfo(code, playerIndex) {
+    try {
+      localStorage.setItem('witch_room_code', code);
+      localStorage.setItem('witch_player_index', playerIndex);
+    } catch(e) {}
   }
-  function clearRoomCode() {
-    try { localStorage.removeItem('witch_room_code'); } catch(e) {}
+  function clearRoomInfo() {
+    try {
+      localStorage.removeItem('witch_room_code');
+      localStorage.removeItem('witch_player_index');
+    } catch(e) {}
   }
-  function getSavedCode() {
-    try { return localStorage.getItem('witch_room_code'); } catch(e) {}
+  function getSavedRoom() {
+    try {
+      const code = localStorage.getItem('witch_room_code');
+      const idx = localStorage.getItem('witch_player_index');
+      if (code && idx) return { code, playerIndex: parseInt(idx) };
+    } catch(e) {}
     return null;
   }
 
-  // ===== IP 自动重连 =====
+  // ===== 自动重连（使用 localStorage 中的 playerIndex） =====
   let reconnectAttempted = false;
 
   function tryReconnect() {
     if (reconnectAttempted) return;
-    const code = getSavedCode();
-    if (!code) return;
+    const saved = getSavedRoom();
+    if (!saved) return;
     reconnectAttempted = true;
 
-    // 先询问服务器，这个 IP 在房间中的身份
-    socket.emit('get_room_state', code);
+    socket.emit('get_room_state', saved.code);
     socket.once('room_state', (state) => {
-      if (state && state.exists && state.playerIndex > 0) {
-        // IP 匹配成功，尝试重连
+      if (state && state.exists && state.used[saved.playerIndex - 1]) {
+        // 该 slot 有人（可能是断线状态），尝试重连
         reconnectingMsg.style.display = 'block';
         lobby.style.display = 'none';
         gameArea.style.display = 'block';
         setIndicator('🔄 正在重新连接...', 'turn-wait');
-        socket.emit('rejoin_room', code);
+        socket.emit('rejoin_room', { code: saved.code, playerIndex: saved.playerIndex });
       } else {
-        // 房间不存在或 IP 不匹配
-        clearRoomCode();
+        clearRoomInfo();
       }
     });
 
-    // 超时保护
     setTimeout(() => {
       if (reconnectingMsg.style.display === 'block') {
         reconnectingMsg.style.display = 'none';
         lobby.style.display = '';
         gameArea.style.display = 'none';
-        clearRoomCode();
-        showError('重连超时，房间可能已过期');
+        clearRoomInfo();
       }
     }, 5000);
   }
@@ -253,7 +271,7 @@
   socket.on('room_created', (data) => {
     roomCode = data.code;
     myIndex = data.playerIndex;
-    saveRoomCode(data.code);
+    saveRoomInfo(data.code, data.playerIndex);
     roomCodeText.textContent = roomCode;
     roomCodeDisplay.style.display = 'block';
     copyCodeBtn.style.display = 'inline-block';
@@ -264,7 +282,7 @@
     roomCode = data.code;
     myIndex = data.playerIndex;
     if (data.scores) scores = data.scores;
-    saveRoomCode(data.code);
+    saveRoomInfo(data.code, data.playerIndex);
     showGame();
   });
 
@@ -352,7 +370,7 @@
     myIndex = data.playerIndex;
     if (data.scores) scores = data.scores;
     if (data.round !== undefined) round = data.round;
-    saveRoomCode(roomCode);
+    saveRoomInfo(roomCode, data.playerIndex);
     myTempPoison = (data.state === 'p1_setup' && data.playerIndex === 1) ? data.poisonP1 :
                    (data.state === 'p2_setup' && data.playerIndex === 2) ? data.poisonP2 : -1;
     myPoison = myTempPoison;
@@ -366,7 +384,7 @@
 
   socket.on('rejoin_failed', (msg) => {
     reconnectingMsg.style.display = 'none';
-    clearRoomCode();
+    clearRoomInfo();
     lobby.style.display = '';
     gameArea.style.display = 'none';
     showError(msg || '重连失败');
@@ -386,7 +404,7 @@
   });
 
   socket.on('opponent_left', () => {
-    clearRoomCode();
+    clearRoomInfo();
     showError('对手已离开');
     setTimeout(() => window.location.reload(), 2000);
   });
@@ -396,29 +414,51 @@
   });
 
   // ===== 大厅逻辑 =====
+  let pendingRoomCode = '';
+
   createBtn.addEventListener('click', () => {
     reconnectAttempted = true;
-    clearRoomCode();
+    clearRoomInfo();
     socket.emit('create_room');
   });
 
+  // 输入房间号后，显示身份选择
   joinBtn.addEventListener('click', () => {
     const code = roomCodeInput.value.trim();
-    if (code.length === 4) {
-      reconnectAttempted = true;
-      clearRoomCode();
-      socket.emit('join_room', code.toUpperCase());
-    } else {
+    if (code.length !== 4) {
       showError('请输入4位房间号');
+      return;
     }
+    pendingRoomCode = code.toUpperCase();
+    // 隐藏输入框，显示身份选择
+    document.querySelector('.lobby-actions').style.display = 'none';
+    rolePicker.style.display = 'flex';
+  });
+
+  // 选择身份：玩家1 或 玩家2
+  roleBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const role = parseInt(btn.dataset.role);
+      reconnectAttempted = true;
+      clearRoomInfo();
+      socket.emit('join_room', { code: pendingRoomCode, playerIndex: role });
+    });
+  });
+
+  // 返回房间号输入
+  backToLobbyBtn.addEventListener('click', () => {
+    rolePicker.style.display = 'none';
+    document.querySelector('.lobby-actions').style.display = 'flex';
   });
 
   roomCodeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') joinBtn.click();
   });
 
+  // 离开房间 → 通知服务端清理 slot
   leaveBtn.addEventListener('click', () => {
-    clearRoomCode();
+    clearRoomInfo();
+    socket.emit('leave_room');
     window.location.reload();
   });
 
@@ -430,10 +470,10 @@
   });
 
   reconnectBtn.addEventListener('click', () => {
-    const code = getSavedCode();
-    if (code) {
+    const saved = getSavedRoom();
+    if (saved) {
       reconnectingMsg.style.display = 'block';
-      socket.emit('rejoin_room', code);
+      socket.emit('rejoin_room', { code: saved.code, playerIndex: saved.playerIndex });
     }
   });
 
