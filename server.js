@@ -67,13 +67,34 @@ io.on('connection', (socket) => {
     console.log(`[创建房间] ${code} 房主 ${socket.id}`);
   });
 
-  // ===== 加入房间（客户端指定选 1 还是 2） =====
+  // ===== 加入房间 =====
   socket.on('join_room', ({ code, playerIndex }) => {
     code = code.toUpperCase();
     const room = rooms[code];
     if (!room) return socket.emit('error_msg', '房间不存在');
 
-    const idx = playerIndex - 1; // 0 or 1
+    // 自动分配空余 slot
+    let idx;
+    if (playerIndex) {
+      idx = playerIndex - 1;
+      // 如果指定的 slot 被占用，自动找空闲 slot
+      if (room.used[idx] && !room.disconnected[idx]) {
+        const freeIdx = idx === 0 ? 1 : 0;
+        if (room.used[freeIdx] && !room.disconnected[freeIdx]) {
+          return socket.emit('error_msg', '房间已满');
+        }
+        idx = freeIdx;
+        playerIndex = idx + 1;
+      }
+    } else {
+      // 没有指定，自动找空闲 slot
+      idx = room.used[0] && !room.disconnected[0] ? 1 : 0;
+      if (room.used[idx] && !room.disconnected[idx]) {
+        return socket.emit('error_msg', '房间已满');
+      }
+      playerIndex = idx + 1;
+    }
+
     if (idx !== 0 && idx !== 1) return socket.emit('error_msg', '无效的玩家位置');
 
     // 如果该位置已被占用且未断开
@@ -81,13 +102,8 @@ io.on('connection', (socket) => {
       return socket.emit('error_msg', `玩家${playerIndex} 位置已被占用`);
     }
 
-    // 如果玩家选了另一个位置，也要检查
-    const otherIdx = idx === 0 ? 1 : 0;
-    if (room.used[otherIdx] && !room.disconnected[otherIdx]) {
-      // 另一个位置有人，说明这个房间已有真实玩家
-    }
-
     // 如果另一个位置被同一个人占了（同一个 socket），拒绝
+    const otherIdx = idx === 0 ? 1 : 0;
     if (room.players[otherIdx] === socket.id) {
       return socket.emit('error_msg', '你已经在房间中了');
     }

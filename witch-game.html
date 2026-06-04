@@ -136,15 +136,6 @@
         <button class="btn" id="joinBtn">🔑 加入</button>
       </div>
     </div>
-    <!-- 身份选择（输入房间号后弹出） -->
-    <div id="rolePicker" style="display:none; flex-direction:column; align-items:center; gap:12px; width:100%;">
-      <div style="font-size:15px; color:#a88aff;">选择你的身份</div>
-      <div style="display:flex; gap:12px;">
-        <button class="btn role-btn" data-role="1" style="font-size:16px; padding:12px 24px;">🧙‍♀️ 玩家1</button>
-        <button class="btn role-btn" data-role="2" style="font-size:16px; padding:12px 24px;">🧙‍♂️ 玩家2</button>
-      </div>
-      <button class="btn" id="backToLobbyBtn" style="font-size:12px;">← 返回</button>
-    </div>
     <div class="error-msg" id="errorMsg"></div>
     <div id="connStatus" style="font-size:12px; color:#665588; text-align:center;"></div>
     <div class="footer-text">两台设备打开同一页面，一人创建一人加入</div>
@@ -193,21 +184,41 @@
   const reconnectingMsg = document.getElementById('reconnectingMsg');
   const scoreDisplay = document.getElementById('scoreDisplay');
   const roundDisplay = document.getElementById('roundDisplay');
-  const rolePicker = document.getElementById('rolePicker');
-  const roleBtns = document.querySelectorAll('.role-btn');
-  const backToLobbyBtn = document.getElementById('backToLobbyBtn');
+
+  // ===== 游戏状态变量 =====
+  let myIndex = 0;
+  let roomCode = '';
+  let phase = 'waiting';
+  let currentPlayer = 0;
+  let foods = [];
+  let eatenSet = new Set();
+  let winner = 0;
+  let poisonP1 = -1;
+  let poisonP2 = -1;
+  let myPoison = -1;
+  let poisonConfirmed = false;
+  let frame = 0;
+  let shakeIdx = -1;
+  let shakeTimer = 0;
+  let revealTimer = 0;
+  let myTempPoison = -1;
+  let scores = [{ win: 0, lose: 0 }, { win: 0, lose: 0 }];
+  let round = 0;
 
   // 连接状态
   socket.on('connect', () => {
+    console.log('[socket] 已连接, id:', socket.id);
     connStatus.textContent = '✅ 已连接';
     connStatus.style.color = '#8affaa';
     tryReconnect();
   });
-  socket.on('connect_error', () => {
+  socket.on('connect_error', (err) => {
+    console.error('[socket] 连接错误:', err.message);
     connStatus.textContent = '❌ 无法连接服务器';
     connStatus.style.color = '#ff8888';
   });
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
+    console.log('[socket] 已断开, 原因:', reason);
     connStatus.textContent = '⚠️ 已断开';
     connStatus.style.color = '#ffaa44';
   });
@@ -269,13 +280,19 @@
 
   // ===== Socket 事件 =====
   socket.on('room_created', (data) => {
-    roomCode = data.code;
-    myIndex = data.playerIndex;
-    saveRoomInfo(data.code, data.playerIndex);
-    roomCodeText.textContent = roomCode;
-    roomCodeDisplay.style.display = 'block';
-    copyCodeBtn.style.display = 'inline-block';
-    showGame();
+    console.log('[room_created] 收到事件:', JSON.stringify(data), 'socket connected:', socket.connected);
+    try {
+      roomCode = data.code;
+      myIndex = data.playerIndex;
+      saveRoomInfo(data.code, data.playerIndex);
+      roomCodeText.textContent = roomCode;
+      roomCodeDisplay.style.display = 'block';
+      copyCodeBtn.style.display = 'inline-block';
+      showGame();
+      console.log('[room_created] UI更新完成');
+    } catch (e) {
+      console.error('[room_created] 处理出错:', e);
+    }
   });
 
   socket.on('room_joined', (data) => {
@@ -414,41 +431,25 @@
   });
 
   // ===== 大厅逻辑 =====
-  let pendingRoomCode = '';
 
   createBtn.addEventListener('click', () => {
+    console.log('[创建房间] 按钮被点击, socket id:', socket.id, 'connected:', socket.connected);
     reconnectAttempted = true;
     clearRoomInfo();
     socket.emit('create_room');
+    console.log('[创建房间] create_room 事件已发送');
   });
 
-  // 输入房间号后，显示身份选择
+  // 输入房间号后，直接以玩家2身份加入
   joinBtn.addEventListener('click', () => {
     const code = roomCodeInput.value.trim();
     if (code.length !== 4) {
       showError('请输入4位房间号');
       return;
     }
-    pendingRoomCode = code.toUpperCase();
-    // 隐藏输入框，显示身份选择
-    document.querySelector('.lobby-actions').style.display = 'none';
-    rolePicker.style.display = 'flex';
-  });
-
-  // 选择身份：玩家1 或 玩家2
-  roleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const role = parseInt(btn.dataset.role);
-      reconnectAttempted = true;
-      clearRoomInfo();
-      socket.emit('join_room', { code: pendingRoomCode, playerIndex: role });
-    });
-  });
-
-  // 返回房间号输入
-  backToLobbyBtn.addEventListener('click', () => {
-    rolePicker.style.display = 'none';
-    document.querySelector('.lobby-actions').style.display = 'flex';
+    reconnectAttempted = true;
+    clearRoomInfo();
+    socket.emit('join_room', { code: code.toUpperCase(), playerIndex: 2 });
   });
 
   roomCodeInput.addEventListener('keydown', (e) => {
@@ -480,6 +481,20 @@
   function showError(msg) { errorMsg.textContent = msg; setTimeout(() => { if (errorMsg.textContent === msg) errorMsg.textContent = ''; }, 3000); }
 
   // ===== Canvas 自适应大小 =====
+  let W, H, GRID_SIZE, CELL_SIZE, PADDING, RADIUS, FONT_SM, FONT_MD, FONT_LG, FONT_XL;
+  function initGameConstants() {
+    W = canvas.width;
+    H = canvas.height;
+    GRID_SIZE = 5;
+    CELL_SIZE = W / GRID_SIZE;
+    PADDING = Math.max(4, W * 0.015);
+    RADIUS = Math.max(4, W * 0.015);
+    FONT_SM = Math.round(W * 0.035);
+    FONT_MD = Math.round(W * 0.043);
+    FONT_LG = Math.round(W * 0.058);
+    FONT_XL = Math.round(W * 0.068);
+  }
+
   function resizeCanvas() {
     const container = canvas.parentElement;
     const maxW = Math.min(container.clientWidth - 4, 650);
@@ -491,41 +506,7 @@
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 
-  // ===== 游戏状态 =====
-  let W, H, GRID_SIZE, CELL_SIZE, PADDING, RADIUS, FONT_SM, FONT_MD, FONT_LG, FONT_XL;
-  function initGameConstants() {
-    W = canvas.width;
-    H = canvas.height;
-    GRID_SIZE = 5;
-    CELL_SIZE = W / GRID_SIZE;
-    PADDING = Math.max(4, W * 0.015);
-    RADIUS = Math.max(4, W * 0.015);
-    FONT_SM = Math.round(W * 0.035);   // ~22px at 650
-    FONT_MD = Math.round(W * 0.043);   // ~28px
-    FONT_LG = Math.round(W * 0.058);   // ~38px
-    FONT_XL = Math.round(W * 0.068);   // ~44px
-  }
-  initGameConstants();
 
-  let myIndex = 0;
-  let roomCode = '';
-  let phase = 'waiting';
-  let currentPlayer = 0;
-  let foods = [];
-  let eatenSet = new Set();
-  let winner = 0;
-  let poisonP1 = -1;
-  let poisonP2 = -1;
-  let myPoison = -1;
-  let poisonConfirmed = false;
-
-  let frame = 0;
-  let shakeIdx = -1;
-  let shakeTimer = 0;
-  let revealTimer = 0;
-  let myTempPoison = -1;
-  let scores = [{ win: 0, lose: 0 }, { win: 0, lose: 0 }];
-  let round = 0;
 
   // ===== 显示 =====
   function showGame() {
