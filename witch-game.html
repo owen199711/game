@@ -6,28 +6,37 @@
   <title>🧙‍♀️ 女巫的毒药</title>
   <script src="/socket.io/socket.io.js"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
     body {
       display: flex; justify-content: center; align-items: center;
-      min-height: 100vh; background: #0a0a1a;
+      min-height: 100vh; min-height: 100dvh; background: #0a0a1a;
       font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 8px;
     }
     .container {
       background: linear-gradient(145deg, #1a1a3e, #0d0d2b);
-      border-radius: 24px; padding: 24px;
+      border-radius: max(16px, 3vw); padding: max(12px, 2vw);
       box-shadow: 0 0 60px rgba(100, 60, 255, 0.3);
       max-width: 700px; width: 100%;
     }
     .header {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 0 8px 16px 8px; color: #c8b8ff;
-      font-size: 18px; font-weight: bold;
+      gap: 8px; flex-wrap: wrap;
+      padding: 0 4px max(8px, 1.5vw) 4px; color: #c8b8ff;
+      font-size: clamp(14px, 3vw, 18px); font-weight: bold;
       text-shadow: 0 0 20px rgba(150, 100, 255, 0.5);
     }
-    canvas { display: block; border-radius: 16px; width: 100%; height: auto; box-shadow: inset 0 0 40px rgba(0,0,0,0.6); }
-    .status-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    canvas {
+      display: block; border-radius: max(10px, 2vw);
+      width: 100%; height: auto; aspect-ratio: 1/1;
+      box-shadow: inset 0 0 40px rgba(0,0,0,0.6);
+      touch-action: manipulation;
+    }
+    .status-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .turn-indicator {
-      padding: 4px 14px; border-radius: 20px; font-size: 14px; font-weight: bold; transition: all 0.3s;
+      padding: 4px clamp(8px, 2vw, 14px); border-radius: 20px;
+      font-size: clamp(11px, 2.5vw, 14px); font-weight: bold;
+      transition: all 0.3s; white-space: nowrap;
     }
     .turn-p1 { background: rgba(100, 180, 255, 0.25); color: #8ac4ff; }
     .turn-p2 { background: rgba(255, 100, 150, 0.25); color: #ff8aaa; }
@@ -39,52 +48,84 @@
     .btn {
       background: rgba(150, 100, 255, 0.2);
       border: 2px solid #8b6aff; color: #c8b8ff;
-      padding: 8px 20px; border-radius: 30px;
-      font-size: 14px; font-weight: bold; cursor: pointer;
-      transition: all 0.2s;
+      padding: clamp(6px, 1.5vw, 10px) clamp(12px, 3vw, 20px);
+      border-radius: 30px;
+      font-size: clamp(12px, 2.5vw, 14px); font-weight: bold;
+      cursor: pointer; transition: all 0.2s;
+      touch-action: manipulation;
     }
-    .btn:hover { background: rgba(150, 100, 255, 0.4); box-shadow: 0 0 20px rgba(150, 100, 255, 0.4); }
+    .btn:active { background: rgba(150, 100, 255, 0.4); }
+    @media (hover: hover) {
+      .btn:hover { background: rgba(150, 100, 255, 0.4); box-shadow: 0 0 20px rgba(150, 100, 255, 0.4); }
+      .btn-primary:hover { background: rgba(100, 180, 255, 0.4); }
+    }
     .btn-primary { background: rgba(100, 180, 255, 0.25); border-color: #5a9eff; color: #8ac4ff; }
-    .btn-primary:hover { background: rgba(100, 180, 255, 0.4); }
 
-    /* Lobby */
     #lobby {
-      display: flex; flex-direction: column; align-items: center; gap: 20px;
-      padding: 60px 20px 40px; color: #c8b8ff;
+      display: flex; flex-direction: column; align-items: center; gap: clamp(12px, 3vw, 20px);
+      padding: clamp(30px, 8vw, 60px) clamp(12px, 3vw, 20px) clamp(20px, 5vw, 40px);
+      color: #c8b8ff;
     }
-    #lobby h1 { font-size: 36px; text-shadow: 0 0 30px rgba(150, 100, 255, 0.5); }
-    #lobby p { color: #8878aa; font-size: 15px; text-align: center; }
-    .lobby-actions { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
-    .room-input { display: flex; gap: 8px; align-items: center; }
+    #lobby h1 { font-size: clamp(24px, 6vw, 36px); text-shadow: 0 0 30px rgba(150, 100, 255, 0.5); }
+    #lobby p { color: #8878aa; font-size: clamp(12px, 2.5vw, 15px); text-align: center; }
+    .lobby-actions { display: flex; gap: clamp(8px, 2vw, 16px); flex-wrap: wrap; justify-content: center; width: 100%; }
+    .room-input { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0; max-width: 300px; }
     .room-input input {
       background: rgba(30, 20, 60, 0.8); border: 2px solid #5a4a8a;
-      color: #c8b8ff; padding: 8px 14px; border-radius: 12px;
-      font-size: 20px; font-weight: bold; width: 130px; text-align: center;
-      letter-spacing: 4px; text-transform: uppercase;
+      color: #c8b8ff; padding: 10px 8px; border-radius: 12px;
+      font-size: clamp(18px, 4vw, 22px); font-weight: bold;
+      width: 0; flex: 1; min-width: 80px;
+      text-align: center; letter-spacing: 4px; text-transform: uppercase;
     }
     .room-input input:focus { outline: none; border-color: #8b6aff; }
-    .room-code-display {
-      background: rgba(100, 60, 200, 0.2); border: 2px dashed #8b6aff;
-      border-radius: 16px; padding: 20px 40px; text-align: center;
-    }
-    .room-code-display .code { font-size: 48px; letter-spacing: 8px; color: #ffd866; font-weight: bold; }
-    .room-code-display .hint { font-size: 14px; color: #8878aa; margin-top: 8px; }
-    .error-msg { color: #ff6a6a; font-size: 14px; min-height: 20px; }
+    .error-msg { color: #ff6a6a; font-size: clamp(12px, 2.5vw, 14px); min-height: 20px; text-align: center; }
     #gameArea { display: none; }
-    .footer-text { font-size: 13px; color: #665588; padding: 8px; }
+    .footer-text { font-size: clamp(11px, 2vw, 13px); color: #665588; padding: 8px; text-align: center; }
+    #reconnectBanner {
+      display: none; text-align: center; padding: 8px;
+      background: rgba(255, 200, 100, 0.1); border-radius: 12px;
+      margin-bottom: 8px; border: 1px solid rgba(255, 200, 100, 0.2);
+      font-size: clamp(11px, 2.5vw, 14px);
+    }
+
+    /* 手机端优化 */
+    @media (max-width: 480px) {
+      body { padding: 4px; }
+      .container { padding: 10px; border-radius: 14px; }
+      .header { font-size: 13px; }
+      #lobby { padding-top: 20px; }
+      #lobby h1 { font-size: 22px; }
+      .room-input input { padding: 12px 6px; }
+      .btn { padding: 10px 16px; font-size: 13px; }
+      /* 消除手机点击高亮 */
+      canvas { -webkit-tap-highlight-color: transparent; }
+    }
+
+    /* 平板优化 */
+    @media (min-width: 768px) {
+      .container { padding: 30px; }
+      #lobby { padding-top: 50px; }
+    }
+
+    /* 横屏手机 */
+    @media (max-height: 500px) and (orientation: landscape) {
+      .container { max-width: 500px; }
+      #lobby { padding-top: 10px; gap: 10px; }
+      #lobby h1 { font-size: 20px; }
+    }
   </style>
 </head>
 <body>
 <div class="container">
   <div class="header">
-    <span>🧙‍♀️ 女巫的毒药</span>
+    <span>🧙‍♀️ 女巫的毒药 <span id="roundDisplay" style="font-size:14px; color:#8878aa;"></span></span>
     <div class="status-bar">
+      <span id="scoreDisplay" style="font-size:14px; color:#ffd866; display:none; margin-right:8px;"></span>
       <span class="turn-indicator turn-idle" id="turnIndicator">等待中</span>
       <button class="btn" id="leaveBtn">🚪 离开</button>
     </div>
   </div>
 
-  <!-- 大厅 -->
   <div id="lobby">
     <h1>🧙‍♀️ 女巫的毒药</h1>
     <p>双人心理博弈 — 谁先吃到对方的毒药谁就输！</p>
@@ -100,18 +141,22 @@
     <div class="footer-text">两台设备打开同一页面，一人创建一人加入</div>
   </div>
 
-  <!-- 游戏 -->
   <div id="gameArea">
+    <div id="reconnectBanner">
+      <span id="reconnectText"></span>
+      <button class="btn" id="reconnectBtn" style="margin-left:10px; padding:4px 14px; font-size:13px;">🔄 重新连接</button>
+    </div>
     <div id="roomCodeDisplay" style="text-align:center; padding:8px 0 16px; display:none;">
       <div style="background:rgba(100,60,200,0.15); border:2px dashed #8b6aff; border-radius:16px; padding:12px 20px; display:inline-block;">
         <div style="font-size:13px; color:#8878aa; margin-bottom:4px;">📋 房间号（分享给朋友）</div>
-        <div id="roomCodeText" style="font-size:40px; letter-spacing:10px; color:#ffd866; font-weight:bold;"></div>
+        <div id="roomCodeText" style="font-size:clamp(28px, 8vw, 40px); letter-spacing:clamp(4px, 2vw, 10px); color:#ffd866; font-weight:bold;"></div>
       </div>
     </div>
-    <canvas id="gameCanvas" width="650" height="650"></canvas>
+    <canvas id="gameCanvas"></canvas>
     <div style="text-align:center; padding-top:12px;">
       <button class="btn" id="copyCodeBtn" style="display:none;">📋 复制房间号</button>
     </div>
+    <div id="reconnectingMsg" style="display:none; text-align:center; padding:16px; color:#ffd866; font-size:16px;">🔄 正在重新连接到房间...</div>
   </div>
 </div>
 
@@ -133,65 +178,82 @@
   const roomCodeText = document.getElementById('roomCodeText');
   const copyCodeBtn = document.getElementById('copyCodeBtn');
   const connStatus = document.getElementById('connStatus');
+  const reconnectBanner = document.getElementById('reconnectBanner');
+  const reconnectText = document.getElementById('reconnectText');
+  const reconnectBtn = document.getElementById('reconnectBtn');
+  const reconnectingMsg = document.getElementById('reconnectingMsg');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const roundDisplay = document.getElementById('roundDisplay');
 
   // 连接状态
-  socket.on('connect', () => { connStatus.textContent = '✅ 已连接到服务器'; connStatus.style.color = '#8affaa'; });
-  socket.on('connect_error', () => { connStatus.textContent = '❌ 无法连接服务器，请确认服务已启动'; connStatus.style.color = '#ff8888'; });
-  socket.on('disconnect', () => { connStatus.textContent = '⚠️ 与服务器断开连接'; connStatus.style.color = '#ffaa44'; });
-
-  // ===== 游戏状态 =====
-  const W = 650, H = 650;
-  const GRID_SIZE = 5;
-  const CELL_SIZE = W / GRID_SIZE;
-  const PADDING = 10;
-
-  let myIndex = 0;      // 1 or 2
-  let roomCode = '';
-  let phase = 'waiting'; // waiting | p1_setup | p2_setup | playing | gameover
-  let currentPlayer = 0;
-  let foods = [];
-  let eatenSet = new Set();
-  let winner = 0;
-  let poisonP1 = -1;
-  let poisonP2 = -1;
-  let myPoison = -1;
-  let poisonConfirmed = false;
-
-  // 动画
-  let frame = 0;
-  let shakeIdx = -1;
-  let shakeTimer = 0;
-  let revealTimer = 0;
-
-  // 我的毒药缓存（用于setup阶段绘制）
-  let myTempPoison = -1;
-
-  // ===== 大厅逻辑 =====
-  createBtn.addEventListener('click', () => socket.emit('create_room'));
-  joinBtn.addEventListener('click', () => {
-    const code = roomCodeInput.value.trim();
-    if (code.length === 4) socket.emit('join_room', code.toUpperCase());
-    else showError('请输入4位房间号');
+  socket.on('connect', () => {
+    connStatus.textContent = '✅ 已连接';
+    connStatus.style.color = '#8affaa';
+    tryReconnect();
   });
-  roomCodeInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') joinBtn.click();
+  socket.on('connect_error', () => {
+    connStatus.textContent = '❌ 无法连接服务器';
+    connStatus.style.color = '#ff8888';
   });
-  leaveBtn.addEventListener('click', () => {
-    window.location.reload();
+  socket.on('disconnect', () => {
+    connStatus.textContent = '⚠️ 已断开';
+    connStatus.style.color = '#ffaa44';
   });
-  copyCodeBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(roomCode).then(() => {
-      copyCodeBtn.textContent = '✅ 已复制！';
-      setTimeout(() => { copyCodeBtn.textContent = '📋 复制房间号'; }, 2000);
+
+  // ===== localStorage 只存房间号 =====
+  function saveRoomCode(code) {
+    try { localStorage.setItem('witch_room_code', code); } catch(e) {}
+  }
+  function clearRoomCode() {
+    try { localStorage.removeItem('witch_room_code'); } catch(e) {}
+  }
+  function getSavedCode() {
+    try { return localStorage.getItem('witch_room_code'); } catch(e) {}
+    return null;
+  }
+
+  // ===== IP 自动重连 =====
+  let reconnectAttempted = false;
+
+  function tryReconnect() {
+    if (reconnectAttempted) return;
+    const code = getSavedCode();
+    if (!code) return;
+    reconnectAttempted = true;
+
+    // 先询问服务器，这个 IP 在房间中的身份
+    socket.emit('get_room_state', code);
+    socket.once('room_state', (state) => {
+      if (state && state.exists && state.playerIndex > 0) {
+        // IP 匹配成功，尝试重连
+        reconnectingMsg.style.display = 'block';
+        lobby.style.display = 'none';
+        gameArea.style.display = 'block';
+        setIndicator('🔄 正在重新连接...', 'turn-wait');
+        socket.emit('rejoin_room', code);
+      } else {
+        // 房间不存在或 IP 不匹配
+        clearRoomCode();
+      }
     });
-  });
 
-  function showError(msg) { errorMsg.textContent = msg; setTimeout(() => { if (errorMsg.textContent === msg) errorMsg.textContent = ''; }, 3000); }
+    // 超时保护
+    setTimeout(() => {
+      if (reconnectingMsg.style.display === 'block') {
+        reconnectingMsg.style.display = 'none';
+        lobby.style.display = '';
+        gameArea.style.display = 'none';
+        clearRoomCode();
+        showError('重连超时，房间可能已过期');
+      }
+    }, 5000);
+  }
 
   // ===== Socket 事件 =====
   socket.on('room_created', (data) => {
     roomCode = data.code;
     myIndex = data.playerIndex;
+    saveRoomCode(data.code);
     roomCodeText.textContent = roomCode;
     roomCodeDisplay.style.display = 'block';
     copyCodeBtn.style.display = 'inline-block';
@@ -201,11 +263,16 @@
   socket.on('room_joined', (data) => {
     roomCode = data.code;
     myIndex = data.playerIndex;
+    if (data.scores) scores = data.scores;
+    saveRoomCode(data.code);
     showGame();
   });
 
-  socket.on('player_joined', () => {
-    // 房主看到提示，自动开始
+  socket.on('player_joined', (data) => {
+    if (data && data.scores) {
+      scores = data.scores;
+      updateScoreDisplay();
+    }
     socket.emit('start_game');
   });
 
@@ -213,6 +280,8 @@
     foods = data.foods;
     phase = data.state;
     currentPlayer = data.currentPlayer;
+    if (data.scores) scores = data.scores;
+    if (data.round !== undefined) round = data.round;
     eatenSet.clear();
     winner = 0;
     poisonP1 = -1;
@@ -225,6 +294,8 @@
     revealTimer = 0;
     roomCodeDisplay.style.display = 'none';
     copyCodeBtn.style.display = 'none';
+    reconnectingMsg.style.display = 'none';
+    updateScoreDisplay();
     updateIndicator();
   });
 
@@ -233,10 +304,13 @@
     currentPlayer = data.currentPlayer;
     if (data.poisonP1 !== undefined) poisonP1 = data.poisonP1;
     if (data.poisonP2 !== undefined) poisonP2 = data.poisonP2;
+    if (data.scores) scores = data.scores;
+    if (data.round !== undefined) round = data.round;
+    updateScoreDisplay();
     updateIndicator();
   });
 
-  socket.on('poison_confirmed', (data) => {
+  socket.on('poison_confirmed', () => {
     poisonConfirmed = true;
   });
 
@@ -258,11 +332,62 @@
     shakeIdx = data.eatenIdx || -1;
     shakeTimer = 20;
     revealTimer = 50;
+    if (data.scores) scores = data.scores;
+    if (data.round !== undefined) round = data.round;
+    updateScoreDisplay();
+    updateIndicator();
+  });
+
+  // ===== 重连相关事件 =====
+  socket.on('rejoin_success', (data) => {
+    reconnectingMsg.style.display = 'none';
+    // 恢复完整游戏状态（服务端通过 IP 匹配，自动告诉 playerIndex）
+    foods = data.foods;
+    phase = data.state;
+    currentPlayer = data.currentPlayer;
+    winner = data.winner;
+    poisonP1 = data.poisonP1;
+    poisonP2 = data.poisonP2;
+    eatenSet = new Set(data.eaten);
+    myIndex = data.playerIndex;
+    if (data.scores) scores = data.scores;
+    if (data.round !== undefined) round = data.round;
+    saveRoomCode(roomCode);
+    myTempPoison = (data.state === 'p1_setup' && data.playerIndex === 1) ? data.poisonP1 :
+                   (data.state === 'p2_setup' && data.playerIndex === 2) ? data.poisonP2 : -1;
+    myPoison = myTempPoison;
+    shakeIdx = -1;
+    shakeTimer = 0;
+    revealTimer = 0;
+    updateScoreDisplay();
+    updateIndicator();
+    if (data.state === 'gameover') revealTimer = 50;
+  });
+
+  socket.on('rejoin_failed', (msg) => {
+    reconnectingMsg.style.display = 'none';
+    clearRoomCode();
+    lobby.style.display = '';
+    gameArea.style.display = 'none';
+    showError(msg || '重连失败');
+  });
+
+  socket.on('opponent_disconnected', () => {
+    reconnectBanner.style.display = 'block';
+    reconnectText.textContent = '⚠️ 对手已断开连接，等待重连...';
+    if (phase === 'playing') {
+      setIndicator('⏳ 对手断线了...', 'turn-idle');
+    }
+  });
+
+  socket.on('opponent_reconnected', () => {
+    reconnectBanner.style.display = 'none';
     updateIndicator();
   });
 
   socket.on('opponent_left', () => {
-    showError('对手已断开连接');
+    clearRoomCode();
+    showError('对手已离开');
     setTimeout(() => window.location.reload(), 2000);
   });
 
@@ -270,15 +395,120 @@
     showError(msg);
   });
 
-  // ===== 显示游戏 =====
+  // ===== 大厅逻辑 =====
+  createBtn.addEventListener('click', () => {
+    reconnectAttempted = true;
+    clearRoomCode();
+    socket.emit('create_room');
+  });
+
+  joinBtn.addEventListener('click', () => {
+    const code = roomCodeInput.value.trim();
+    if (code.length === 4) {
+      reconnectAttempted = true;
+      clearRoomCode();
+      socket.emit('join_room', code.toUpperCase());
+    } else {
+      showError('请输入4位房间号');
+    }
+  });
+
+  roomCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') joinBtn.click();
+  });
+
+  leaveBtn.addEventListener('click', () => {
+    clearRoomCode();
+    window.location.reload();
+  });
+
+  copyCodeBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(roomCode).then(() => {
+      copyCodeBtn.textContent = '✅ 已复制！';
+      setTimeout(() => { copyCodeBtn.textContent = '📋 复制房间号'; }, 2000);
+    });
+  });
+
+  reconnectBtn.addEventListener('click', () => {
+    const code = getSavedCode();
+    if (code) {
+      reconnectingMsg.style.display = 'block';
+      socket.emit('rejoin_room', code);
+    }
+  });
+
+  function showError(msg) { errorMsg.textContent = msg; setTimeout(() => { if (errorMsg.textContent === msg) errorMsg.textContent = ''; }, 3000); }
+
+  // ===== Canvas 自适应大小 =====
+  function resizeCanvas() {
+    const container = canvas.parentElement;
+    const maxW = Math.min(container.clientWidth - 4, 650);
+    const size = Math.max(280, maxW);
+    canvas.width = size;
+    canvas.height = size;
+    initGameConstants();
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // ===== 游戏状态 =====
+  let W, H, GRID_SIZE, CELL_SIZE, PADDING, RADIUS, FONT_SM, FONT_MD, FONT_LG, FONT_XL;
+  function initGameConstants() {
+    W = canvas.width;
+    H = canvas.height;
+    GRID_SIZE = 5;
+    CELL_SIZE = W / GRID_SIZE;
+    PADDING = Math.max(4, W * 0.015);
+    RADIUS = Math.max(4, W * 0.015);
+    FONT_SM = Math.round(W * 0.035);   // ~22px at 650
+    FONT_MD = Math.round(W * 0.043);   // ~28px
+    FONT_LG = Math.round(W * 0.058);   // ~38px
+    FONT_XL = Math.round(W * 0.068);   // ~44px
+  }
+  initGameConstants();
+
+  let myIndex = 0;
+  let roomCode = '';
+  let phase = 'waiting';
+  let currentPlayer = 0;
+  let foods = [];
+  let eatenSet = new Set();
+  let winner = 0;
+  let poisonP1 = -1;
+  let poisonP2 = -1;
+  let myPoison = -1;
+  let poisonConfirmed = false;
+
+  let frame = 0;
+  let shakeIdx = -1;
+  let shakeTimer = 0;
+  let revealTimer = 0;
+  let myTempPoison = -1;
+  let scores = [{ win: 0, lose: 0 }, { win: 0, lose: 0 }];
+  let round = 0;
+
+  // ===== 显示 =====
   function showGame() {
     lobby.style.display = 'none';
     gameArea.style.display = 'block';
-    // 房主直接看到等待，等另一个玩家加入
     if (myIndex === 1) {
       setIndicator('等待另一位玩家加入...', 'turn-wait');
     } else {
       setIndicator('已加入房间，等待房主开始...', 'turn-wait');
+    }
+  }
+
+  function updateScoreDisplay() {
+    if (scores[0].win + scores[0].lose + scores[1].win + scores[1].lose === 0) {
+      scoreDisplay.style.display = 'none';
+      return;
+    }
+    scoreDisplay.style.display = 'inline';
+    const me = scores[myIndex - 1];
+    const opp = scores[myIndex === 1 ? 1 : 0];
+    scoreDisplay.textContent = `🏆 ${me.win}胜 ${me.lose}负  |  对手 ${opp.win}胜 ${opp.lose}负`;
+    if (round > 0) {
+      roundDisplay.textContent = `第 ${round + 1} 局`;
     }
   }
 
@@ -295,8 +525,8 @@
       if (myIndex === 2) setIndicator('🙈 选择你的毒药', 'turn-p2');
       else setIndicator('🙈 玩家2 正在下毒...', 'turn-wait');
     } else if (phase === 'playing') {
-      if (currentPlayer === myIndex) setIndicator(`🎯 轮到你吃了！`, currentPlayer === 1 ? 'turn-p1' : 'turn-p2');
-      else setIndicator(`⏳ 对手思考中...`, 'turn-idle');
+      if (currentPlayer === myIndex) setIndicator('🎯 轮到你吃了！', currentPlayer === 1 ? 'turn-p1' : 'turn-p2');
+      else setIndicator('⏳ 对手思考中...', 'turn-idle');
     } else if (phase === 'gameover') {
       if (winner === 0) setIndicator('🤝 平局！', 'turn-idle');
       else if (winner === myIndex) setIndicator('👑 你赢了！', 'turn-win');
@@ -304,7 +534,7 @@
     }
   }
 
-  // ===== Canvas 交互 =====
+  // ===== Canvas =====
   function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -326,7 +556,10 @@
     const row = Math.floor(my / CELL_SIZE);
     const idx = row * GRID_SIZE + col;
     if (idx < 0 || idx >= GRID_SIZE * GRID_SIZE) return;
-    if (phase === 'gameover') return;
+    if (phase === 'gameover') {
+      socket.emit('next_round');
+      return;
+    }
 
     if (phase === 'p1_setup' && myIndex === 1) {
       myPoison = idx;
@@ -368,26 +601,24 @@
     drawBackground();
     drawGrid();
 
-    // 自己下毒时的标记
     if ((phase === 'p1_setup' || phase === 'p2_setup') && myTempPoison >= 0) {
       const col = myTempPoison % GRID_SIZE;
       const row = Math.floor(myTempPoison / GRID_SIZE);
       const px = col * CELL_SIZE + CELL_SIZE/2;
       const py = row * CELL_SIZE + CELL_SIZE/2;
-      ctx.font = '24px serif';
+      ctx.font = FONT_SM + 'px serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = myIndex === 1 ? 'rgba(100, 180, 255, 0.8)' : 'rgba(255, 100, 150, 0.8)';
       ctx.fillText('☠️', px + 22, py - 22);
     }
 
-    // 游戏结束显示双方毒药
     if (phase === 'gameover' && revealTimer <= 0) {
       [poisonP1, poisonP2].forEach((pi, i) => {
         if (pi < 0) return;
         const col = pi % GRID_SIZE, row = Math.floor(pi / GRID_SIZE);
         const px = col * CELL_SIZE + CELL_SIZE/2, py = row * CELL_SIZE + CELL_SIZE/2;
-        ctx.font = '24px serif';
+        ctx.font = FONT_SM + 'px serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = i === 0 ? 'rgba(100, 180, 255, 0.9)' : 'rgba(255, 100, 150, 0.9)';
@@ -427,28 +658,27 @@
         ctx.translate(bx, by);
         if (isEaten) {
           ctx.fillStyle = 'rgba(30, 20, 40, 0.7)';
-          roundRect(ctx, PADDING, PADDING, CELL_SIZE - PADDING*2, CELL_SIZE - PADDING*2, 10);
+          roundRect(ctx, PADDING, PADDING, CELL_SIZE - PADDING*2, CELL_SIZE - PADDING*2, RADIUS);
           ctx.fill();
-          ctx.font = '28px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = FONT_MD + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillStyle = 'rgba(100, 80, 120, 0.4)';
           ctx.fillText('💀', CELL_SIZE/2, CELL_SIZE/2);
         } else if (phase === 'gameover' && revealTimer <= 0 && (idx === poisonP1 || idx === poisonP2)) {
-          // 毒药格子（已揭晓）
           const isP1 = idx === poisonP1;
           ctx.fillStyle = isP1 ? 'rgba(100, 180, 255, 0.2)' : 'rgba(255, 100, 150, 0.2)';
           ctx.shadowColor = isP1 ? '#4488ff' : '#ff4488';
           ctx.shadowBlur = 12;
-          roundRect(ctx, PADDING, PADDING, CELL_SIZE - PADDING*2, CELL_SIZE - PADDING*2, 10);
+          roundRect(ctx, PADDING, PADDING, CELL_SIZE - PADDING*2, CELL_SIZE - PADDING*2, RADIUS);
           ctx.fill();
           ctx.shadowBlur = 0;
-          ctx.font = '38px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = FONT_LG + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(foods[idx], CELL_SIZE/2, CELL_SIZE/2);
         } else {
           ctx.fillStyle = 'rgba(50, 40, 80, 0.4)';
           ctx.shadowColor = 'rgba(150, 100, 255, 0.15)'; ctx.shadowBlur = 8;
-          roundRect(ctx, PADDING, PADDING, CELL_SIZE - PADDING*2, CELL_SIZE - PADDING*2, 10);
+          roundRect(ctx, PADDING, PADDING, CELL_SIZE - PADDING*2, CELL_SIZE - PADDING*2, RADIUS);
           ctx.fill(); ctx.shadowBlur = 0;
-          ctx.font = '38px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = FONT_LG + 'px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(foods[idx], CELL_SIZE/2, CELL_SIZE/2);
         }
         ctx.restore();
@@ -466,28 +696,36 @@
     if (phase === 'gameover') {
       ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+      // 积分
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffd866';
+      ctx.font = 'bold ' + FONT_SM + 'px "Segoe UI", Arial, sans-serif';
+      const meScore = scores[myIndex - 1];
+      const oppScore = scores[myIndex === 1 ? 1 : 0];
+      ctx.fillText(`🏆 你 ${meScore.win}胜 ${meScore.lose}负   vs   对手 ${oppScore.win}胜 ${oppScore.lose}负`, W/2, H/2 - 70);
+
       if (winner === 0) {
         ctx.shadowColor = '#ffd866'; ctx.shadowBlur = 30;
         ctx.fillStyle = '#ffd866';
-        ctx.font = 'bold 40px "Segoe UI", Arial, sans-serif';
+        ctx.font = 'bold ' + FONT_LG + 'px "Segoe UI", Arial, sans-serif';
         ctx.fillText('🤝 平局！', W/2, H/2 - 20);
       } else {
         const isMe = winner === myIndex;
         ctx.shadowColor = isMe ? '#ffd700' : '#ff4466'; ctx.shadowBlur = 40;
         ctx.fillStyle = isMe ? '#ffd700' : '#ff4466';
-        ctx.font = 'bold 44px "Segoe UI", Arial, sans-serif';
-        ctx.fillText(isMe ? '👑 你赢了！' : '💀 你输了！', W/2, H/2 - 30);
+        ctx.font = 'bold ' + FONT_XL + 'px "Segoe UI", Arial, sans-serif';
+        ctx.fillText(isMe ? '👑 你赢了！' : '💀 你输了！', W/2, H/2 - 20);
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#c8b8ff';
-        ctx.font = '18px "Segoe UI", Arial, sans-serif';
+        ctx.font = FONT_MD + 'px "Segoe UI", Arial, sans-serif';
         ctx.fillText(isMe ? '对手吃到了你的毒药！' : '你吃到了对手的毒药！', W/2, H/2 + 20);
       }
       ctx.shadowBlur = 0;
-      ctx.fillStyle = 'rgba(200, 180, 255, 0.5)';
-      ctx.font = '14px "Segoe UI", Arial, sans-serif';
-      ctx.fillText('点击「重开」再来一局', W/2, H/2 + 80);
-    } else if (!isMyTurn() && phase !== 'gameover') {
-      // 不是你的回合时，半透明遮罩
+      ctx.fillStyle = 'rgba(200, 180, 255, 0.6)';
+      ctx.font = FONT_SM + 'px "Segoe UI", Arial, sans-serif';
+      ctx.fillText('👆 点击进入下一局', W/2, H/2 + 75);
+    } else if (!isMyTurn() && phase !== 'gameover' && phase !== 'waiting') {
       ctx.fillStyle = 'rgba(0,0,0,0.15)';
       ctx.fillRect(0, 0, W, H);
     }
